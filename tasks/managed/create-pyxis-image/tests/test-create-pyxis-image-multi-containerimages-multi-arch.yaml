@@ -219,6 +219,7 @@ spec:
                 cat "$(params.dataDir)/mock_create_container_image.txt"
                 exit 1
               fi
+              cat "$(params.dataDir)/mock_create_container_image.txt"
 
               if [ -f "$(params.dataDir)/mock_cleanup_tags.txt" ]; then
                 echo Error: cleanup_tags was not expected to be called. Actual calls:
