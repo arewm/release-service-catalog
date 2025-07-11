@@ -26,7 +26,7 @@ spec:
     - name: concurrentLimit
       type: string
       description: The maximum number of images to be processed at once
-      default: 4
+      default: 20
     - name: ociStorage
       description: The OCI repository where the Trusted Artifacts are stored
       type: string
@@ -135,9 +135,9 @@ spec:
         quay.io/konflux-ci/release-service-utils:fe734aa04168690e96f0a729f93845e7c70b7934
       computeResources:
         limits:
-          memory: 128Mi
+          memory: 512Mi
         requests:
-          memory: 128Mi
+          memory: 512Mi
           cpu: 500m
       script: |
         #!/usr/bin/env bash
@@ -180,31 +180,110 @@ spec:
             fi
         }
 
+        # Function to download SBOM for a single image
+        download_sbom_for_image() {
+            local pyxis_image="$1"
+            local image_url="$2"
+            
+            local file
+            local digest
+            local arch_digest
+            local os
+            local arch
+            local platform
+            
+            file="$(jq -r '.imageId' <<< "$pyxis_image").json"
+            digest="$(jq -r '.digest' <<< "$pyxis_image")"
+            arch_digest="$(jq -r '.arch_digest' <<< "$pyxis_image")"
+            
+            # cosign has very limited support for selecting the right auth entry,
+            # so create a custom auth file with just one entry.
+            DOCKER_CONFIG="$(mktemp -d)"
+            export DOCKER_CONFIG
+            select-oci-auth "${image_url}" > "${DOCKER_CONFIG}/config.json"
+            
+            # You can't pass --platform to a single arch image or cosign errors.
+            # If digest equals arch_digest, then it's a single arch image
+            if [ "$digest" = "$arch_digest" ] ; then
+              echo "Fetching sbom for single arch image: $image_url to: $file"
+              run_cosign download sbom --output-file "${file}" "${image_url}"
+            else
+              os=$(jq -r '.os' <<< "$pyxis_image")
+              arch=$(jq -r '.arch' <<< "$pyxis_image")
+              platform="${os}/${arch}"
+              echo "Fetching sbom for image: $image_url with platform: $platform to: $file"
+              run_cosign download sbom --output-file "${file}" --platform "${platform}" "${image_url}"
+            fi
+        }
+
+        # Collect all download tasks first
+        declare -a download_tasks=()
+        declare -a task_images=()
+        declare -a task_urls=()
+        
         for (( i=0; i < NUM_COMPONENTS; i++ )); do
           COMPONENT=$(jq -c --argjson i "$i" '.components[$i]' "${PYXIS_FILE}")
           IMAGEURL=$(jq -r '.containerImage' <<< "${COMPONENT}")
           NUM_PYXIS_IMAGES=$(jq '.pyxisImages | length' <<< "${COMPONENT}")
-          # cosign has very limited support for selecting the right auth entry,
-          # so create a custom auth file with just one entry
-          select-oci-auth "$IMAGEURL" > "$DOCKER_CONFIG"/config.json
+          
           for (( j=0; j < NUM_PYXIS_IMAGES; j++ )); do
             PYXIS_IMAGE=$(jq -c --argjson j "$j" '.pyxisImages[$j]' <<< "${COMPONENT}")
-            FILE="$(jq -r '.imageId' <<< "$PYXIS_IMAGE").json"
-            DIGEST="$(jq -r '.digest' <<< "$PYXIS_IMAGE")"
-            ARCH_DIGEST="$(jq -r '.arch_digest' <<< "$PYXIS_IMAGE")"
-            # You can't pass --platform to a single arch image or cosign errors.
-            # If digest equals arch_digest, then it's a single arch image
-            if [ "$DIGEST" = "$ARCH_DIGEST" ] ; then
-              echo "Fetching sbom for single arch image: $IMAGEURL to: $FILE"
-              run_cosign download sbom --output-file "${FILE}" "${IMAGEURL}"
-            else
-              OS=$(jq -r '.os' <<< "$PYXIS_IMAGE")
-              ARCH=$(jq -r '.arch' <<< "$PYXIS_IMAGE")
-              PLATFORM="${OS}/${ARCH}"
-              echo "Fetching sbom for image: $IMAGEURL with platform: $PLATFORM to: $FILE"
-              run_cosign download sbom --output-file "${FILE}" --platform "${PLATFORM}" "${IMAGEURL}"
-            fi
+            IMAGEID=$(jq -r '.imageId' <<< "$PYXIS_IMAGE")
+            
+            # Store task information for parallel execution
+            download_tasks+=("$PYXIS_IMAGE")
+            task_images+=("$IMAGEID")
+            task_urls+=("$IMAGEURL")
           done
+        done
+
+        # Process downloads in parallel batches
+        N=$(params.concurrentLimit)  # The maximum number of images to be processed at once
+        declare -a jobs=()
+        total=${#download_tasks[@]}
+        count=0
+        success=true
+        echo "Starting SBOM download for $total images in total. " \
+          "Up to $N images will be downloaded at once..."
+
+        for (( idx=0; idx < total; idx++ )); do
+          PYXIS_IMAGE="${download_tasks[idx]}"
+          IMAGEID="${task_images[idx]}"
+          IMAGEURL="${task_urls[idx]}"
+          
+          echo "Starting download for IMAGE: $IMAGEID from URL: $IMAGEURL"
+          download_sbom_for_image "$PYXIS_IMAGE" "$IMAGEURL" > "${IMAGEID}.download.out" 2>&1 &
+          
+          jobs+=($!)  # Save the background process ID
+          ((++count))
+
+          if [ $((count%N)) -eq 0 ] || [ $((count)) -eq "$total" ]; then
+            echo "Waiting for the current batch of background processes to finish"
+            for job_id in "${!jobs[@]}"; do
+              if ! wait "${jobs[job_id]}"; then
+                echo "Error: download of sbom failed for one of the images"
+                success=false
+              fi
+            done
+
+            echo
+            echo "Printing outputs for current download runs"
+            start_idx=$((idx - count + 1))
+            for (( i=0; i < count; i++ )); do
+              img="${task_images[$((start_idx + i))]}"
+              echo "=== $img ==="
+              cat "${img}.download.out"
+              echo
+            done
+
+            if [ $success != "true" ]; then
+              echo "ERROR: At least one download in the last batch failed"
+              exit 1
+            fi
+
+            # Reset job array for the next batch
+            jobs=()
+          fi
         done
 
         sbom_files=(*.json)
@@ -219,9 +298,9 @@ spec:
         quay.io/konflux-ci/release-service-utils:fe734aa04168690e96f0a729f93845e7c70b7934
       computeResources:
         limits:
-          memory: 256Mi
+          memory: 512Mi
         requests:
-          memory: 256Mi
+          memory: 512Mi
           cpu: '1'
       env:
         - name: PYXIS_CERT
