@@ -608,7 +608,7 @@ spec:
     - name: rh-sign-image
       timeout: "6h00m0s"
       when:
-        - input: "$(tasks.filter-already-released-advisory-images.results.skip_release)"
+        - input: "false"
           operator: in
           values: ["false"]
       retries: 3
@@ -623,11 +623,11 @@ spec:
             value: tasks/managed/rh-sign-image/rh-sign-image.yaml
       params:
         - name: snapshotPath
-          value: "$(tasks.collect-data.results.snapshotSpec)"
+          value: "dacfa3ba-5921-4864-9098-e5c07444b61f/snapshot_spec.json"
         - name: dataPath
-          value: "$(tasks.collect-data.results.data)"
+          value: "dacfa3ba-5921-4864-9098-e5c07444b61f/data.json"
         - name: releasePlanAdmissionPath
-          value: "$(tasks.collect-data.results.releasePlanAdmission)"
+          value: "dacfa3ba-5921-4864-9098-e5c07444b61f/release_plan_admission.json"
         - name: requester
           value: $(tasks.extract-requester-from-release.results.output-result)
         - name: requestTimeout
@@ -637,15 +637,15 @@ spec:
         - name: pipelineRunUid
           value: $(context.pipelineRun.uid)
         - name: pyxisServer
-          value: $(tasks.collect-pyxis-params.results.server)
+          value: "stage-internal"
         - name: pyxisSecret
-          value: $(tasks.collect-pyxis-params.results.secret)
+          value: "pyxis-staging-secret"
         - name: signRegistryAccessPath
-          value: $(tasks.publish-pyxis-repository.results.signRegistryAccessPath)
+          value: "dacfa3ba-5921-4864-9098-e5c07444b61f/sign-registry-access.txt"
         - name: ociStorage
           value: $(params.ociStorage)
         - name: sourceDataArtifact
-          value: "$(tasks.publish-pyxis-repository.results.sourceDataArtifact)"
+          value: "oci:quay.io/konflux-ci/release-service-trusted-artifacts@sha256:573c4b71acfe16333eef0e31e20b18462dce4f3dc09066d11b08bb8893ef0ad0"
         - name: dataDir
           value: $(params.dataDir)
         - name: trustedArtifactsDebug
@@ -658,9 +658,6 @@ spec:
         - name: data
           workspace: release-workspace
       runAfter:
-        - embargo-check
-        - verify-conforma
-        - publish-pyxis-repository
         - extract-requester-from-release
     - name: create-pyxis-image
       when:
