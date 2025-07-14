@@ -208,6 +208,8 @@ spec:
         set -x
         declare -a reference_args=()
         declare -a digest_args=()
+        echo "References: ${references}"
+        echo "Manifest digests: ${manifest_digests}"
         for reference in $references; do
           reference_args+=("--reference")
           reference_args+=("${reference}")

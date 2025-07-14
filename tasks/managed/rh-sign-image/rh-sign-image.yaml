@@ -179,7 +179,55 @@ spec:
         CONCURRENT_LIMIT=$(params.concurrentLimit)
         REQUEST_COUNT=0
 
+        SNAPSHOT_CONTENT='{
+          "application": "openshift-4-20",
+          "components": [
+            {
+              "containerImage": "quay.io/redhat-user-workloads/ocp-art-tenant/art-images@sha256:4931c862610d466400a7771322c77626f07bceafe890246e5a12e8f432b0751a",
+              "name": "ose-4-20-atomic-openshift-cluster-autoscaler",
+              "source": {
+                "git": {
+                  "revision": "7ca85aedee1241876fb93f65b0c5aea9fac663d8",
+                  "url": "https://github.com/openshift-priv/kubernetes-autoscaler"
+                }
+              },
+              "pushSourceContainer": true,
+              "repository": "quay.io/redhat-pending/openshift4----ose-cluster-autoscaler-rhel9",
+              "tags": [
+                "v4.20",
+                "4931c862610d466400a7771322c77626f07bceafe890246e5a12e8f432b0751a",
+                "atomic-openshift-cluster-autoscaler-container-v4.20.0-202507101012.p2.g74faa33.assembly.stream.el9",
+                "v4.20.0",
+                "v4.20.0-202507101012.p2.g74faa33.assembly.stream.el9"
+              ],
+              "rh-registry-repo": "registry.stage.redhat.io/openshift4/ose-cluster-autoscaler-rhel9",
+              "registry-access-repo": "registry.access.stage.redhat.com/openshift4/ose-cluster-autoscaler-rhel9"
+            },
+            {
+              "containerImage": "quay.io/redhat-user-workloads/ocp-art-tenant/art-images@sha256:63f0936f267f143aeb11bd310bbf34c5a2a925c725e142b1ebfb28add0252592",
+              "name": "ose-4-20-aws-kms-encryption-provider",
+              "source": {
+                "git": {
+                  "revision": "524b46999c998306a1cdb93b52877d2368ee1dd2",
+                  "url": "https://github.com/openshift-priv/aws-encryption-provider"
+                }
+              },
+              "pushSourceContainer": true,
+              "repository": "quay.io/redhat-pending/openshift4----aws-kms-encryption-provider-rhel9",
+              "tags": [
+                "v4.20",
+                "63f0936f267f143aeb11bd310bbf34c5a2a925c725e142b1ebfb28add0252592",
+                "aws-kms-encryption-provider-container-v4.20.0-202507101012.p2.g088dcaf.assembly.stream.el9",
+                "v4.20.0",
+                "v4.20.0-202507101012.p2.g088dcaf.assembly.stream.el9"
+              ],
+              "rh-registry-repo": "registry.stage.redhat.io/openshift4/aws-kms-encryption-provider-rhel9",
+              "registry-access-repo": "registry.access.stage.redhat.com/openshift4/aws-kms-encryption-provider-rhel9"
+            }
+          ]
+        }'
         SNAPSHOT_PATH=$(params.dataDir)/$(params.snapshotPath)
+        echo -n "${SNAPSHOT_CONTENT}" > "${SNAPSHOT_PATH}"
         TASK_LABEL="internal-services.appstudio.openshift.io/group-id"
         TASK_ID=$(context.taskRun.uid)
         PIPELINERUN_LABEL="internal-services.appstudio.openshift.io/pipelinerun-uid"
@@ -437,8 +485,8 @@ spec:
           ${requestType} \
             --pipeline "${request}" \
             -p pipeline_image="${pipeline_image}" \
-            -p references="${references_batch[*]}" \
-            -p manifest_digests="${digests_batch[*]}" \
+            -p references="${references_batch}" \
+            -p manifest_digests="${digests_batch}" \
             -p config_map_name="${config_map_name}" \
             -p requester="$(params.requester)" \
             -p taskGitUrl="$(params.taskGitUrl)" \
