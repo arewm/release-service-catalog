@@ -141,9 +141,9 @@ spec:
       image: quay.io/konflux-ci/release-service-utils:ea7868ebdcc7a2116c620255034226611d837f42
       computeResources:
         limits:
-          memory: 512Mi
+          memory: 4Gi
         requests:
-          memory: 512Mi
+          memory: 4Gi
           cpu: '2'
       script: |
         #!/usr/bin/env bash
